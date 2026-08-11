@@ -1,27 +1,51 @@
 from flask import Flask, render_template, request, redirect, url_for, session
-import sqlite3
+import os
+import psycopg2
+from urllib.parse import urlparse
 from datetime import datetime
 
 app = Flask(__name__)
 app.secret_key = 'sabiyoner_gizli_kac_key_123'
 
+# Render DATABASE_URL parametri
+DATABASE_URL = os.environ.get('DATABASE_URL')
+
+def get_db_connection():
+    if DATABASE_URL:
+        # PostgreSQL bağlantısı
+        url = urlparse(DATABASE_URL)
+        conn = psycopg2.connect(
+            database=url.path[1:],
+            user=url.username,
+            password=url.password,
+            host=url.hostname,
+            port=url.port
+        )
+        return conn, 'postgres'
+    else:
+        # Lokal sqlite3 bağlantısı (kompüterdə test üçün)
+        import sqlite3
+        conn = sqlite3.connect('sabiyoner.db')
+        return conn, 'sqlite'
+
 def init_db():
-    conn = sqlite3.connect('sabiyoner.db')
+    conn, db_type = get_db_connection()
     cursor = conn.cursor()
     
-    # İstifadəçilər
-    cursor.execute('''
+    placeholder = '%s' if db_type == 'postgres' else '?'
+    auto_inc = 'SERIAL PRIMARY KEY' if db_type == 'postgres' else 'INTEGER PRIMARY KEY AUTOINCREMENT'
+
+    cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {auto_inc},
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL
         )
     ''')
     
-    # Postlar
-    cursor.execute('''
+    cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS posts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {auto_inc},
             title TEXT NOT NULL,
             content TEXT NOT NULL,
             category TEXT DEFAULT 'Ümumi',
@@ -31,40 +55,40 @@ def init_db():
         )
     ''')
 
-    # Like tarixçəsi (Təkrar like-ın qarşısını almaq üçün)
-    cursor.execute('''
+    cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS likes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {auto_inc},
             user_ip_or_name TEXT NOT NULL,
             post_id INTEGER NOT NULL,
             UNIQUE(user_ip_or_name, post_id)
         )
     ''')
 
-    # Rəylər
-    cursor.execute('''
+    cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS comments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {auto_inc},
             post_id INTEGER NOT NULL,
             author TEXT NOT NULL,
             content TEXT NOT NULL,
-            FOREIGN KEY(post_id) REFERENCES posts(id)
+            FOREIGN KEY(post_id) REFERENCES posts(id) ON DELETE CASCADE
         )
     ''')
     
-    # İlkin postlar
     cursor.execute('SELECT COUNT(*) FROM posts')
-    if cursor.fetchone()[0] == 0:
+    count = cursor.fetchone()[0]
+    if count == 0:
         now = datetime.now().strftime("%d.%m.%Y %H:%M")
         initial_posts = [
             ('İlk anonim etiraf!', 'Proqramlaşdırma öyrənəndə ilk 2 saat yalnız koda baxıb ağlayırdım...', 'İş Həyatı', 13, 'Qonaq', now),
             ('Müdirimə səhvən stiker göndərdim', 'İş qrupunda ciddi müzakirə gedirdi, yanlışlıqla gülməli pişik fotosu getdi.', 'Gülməli', 6, 'Qonaq', now)
         ]
-        cursor.executemany('INSERT INTO posts (title, content, category, votes, author, created_at) VALUES (?, ?, ?, ?, ?, ?)', initial_posts)
+        for p in initial_posts:
+            cursor.execute(f'INSERT INTO posts (title, content, category, votes, author, created_at) VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})', p)
         
     conn.commit()
     conn.close()
 
+# Bazanı işə salırıq
 init_db()
 
 @app.route('/')
@@ -73,18 +97,19 @@ def home():
     category_filter = request.args.get('cat', 'Hamısı')
     search_query = request.args.get('q', '').strip()
 
-    conn = sqlite3.connect('sabiyoner.db')
+    conn, db_type = get_db_connection()
     cursor = conn.cursor()
+    p = '%s' if db_type == 'postgres' else '?'
     
     query = 'SELECT id, title, content, category, votes, author, created_at FROM posts WHERE 1=1'
     params = []
 
     if category_filter != 'Hamısı':
-        query += ' AND category = ?'
+        query += f' AND category = {p}'
         params.append(category_filter)
 
     if search_query:
-        query += ' AND (LOWER(title) LIKE LOWER(?) OR LOWER(content) LIKE LOWER(?))'
+        query += f' AND (LOWER(title) LIKE LOWER({p}) OR LOWER(content) LIKE LOWER({p}))'
         params.extend([f'%{search_query}%', f'%{search_query}%'])
 
     if sort_by == 'new':
@@ -98,7 +123,7 @@ def home():
     posts = []
     for row in posts_data:
         p_id = row[0]
-        cursor.execute('SELECT author, content FROM comments WHERE post_id = ? ORDER BY id ASC', (p_id,))
+        cursor.execute(f'SELECT author, content FROM comments WHERE post_id = {p} ORDER BY id ASC', (p_id,))
         comments_data = cursor.fetchall()
         comments = [{"author": c[0], "content": c[1]} for c in comments_data]
 
@@ -128,10 +153,11 @@ def create_post():
     created_at = datetime.now().strftime("%d.%m.%Y %H:%M")
     
     if title and content:
-        conn = sqlite3.connect('sabiyoner.db')
+        conn, db_type = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('INSERT INTO posts (title, content, category, votes, author, created_at) VALUES (?, ?, ?, ?, ?, ?)', 
-                       (title, content, category, 1, author, created_at))
+        p = '%s' if db_type == 'postgres' else '?'
+        cursor.execute(f'INSERT INTO posts (title, content, category, votes, author, created_at) VALUES ({p}, {p}, {p}, 1, {p}, {p})', 
+                       (title, content, category, author, created_at))
         conn.commit()
         conn.close()
         
@@ -140,27 +166,27 @@ def create_post():
 @app.route('/delete/<int:post_id>')
 def delete_post(post_id):
     current_user = session.get('username', 'Qonaq')
-    conn = sqlite3.connect('sabiyoner.db')
+    conn, db_type = get_db_connection()
     cursor = conn.cursor()
-    # Yalnız postun öz müəllifi silə bilsin
-    cursor.execute('DELETE FROM posts WHERE id = ? AND author = ?', (post_id, current_user))
+    p = '%s' if db_type == 'postgres' else '?'
+    cursor.execute(f'DELETE FROM posts WHERE id = {p} AND author = {p}', (post_id, current_user))
     conn.commit()
     conn.close()
     return redirect(url_for('home'))
 
 @app.route('/vote/<int:post_id>')
 def vote(post_id):
-    user_identifier = session.get('username', request.remote_addr) # Giriş edibsə adı, etməyibsə IP ünvanı
-    conn = sqlite3.connect('sabiyoner.db')
+    user_identifier = session.get('username', request.remote_addr)
+    conn, db_type = get_db_connection()
     cursor = conn.cursor()
+    p = '%s' if db_type == 'postgres' else '?'
     
     try:
-        # Təkrar like yoxlanışı
-        cursor.execute('INSERT INTO likes (user_ip_or_name, post_id) VALUES (?, ?)', (user_identifier, post_id))
-        cursor.execute('UPDATE posts SET votes = votes + 1 WHERE id = ?', (post_id,))
+        cursor.execute(f'INSERT INTO likes (user_ip_or_name, post_id) VALUES ({p}, {p})', (user_identifier, post_id))
+        cursor.execute(f'UPDATE posts SET votes = votes + 1 WHERE id = {p}', (post_id,))
         conn.commit()
-    except sqlite3.IntegrityError:
-        pass # Artıq like basıb, heç nə etmirik
+    except Exception:
+        conn.rollback()
         
     conn.close()
     return redirect(url_for('home'))
@@ -170,9 +196,10 @@ def add_comment(post_id):
     content = request.form.get('comment_text')
     author = session.get('username', 'Qonaq')
     if content:
-        conn = sqlite3.connect('sabiyoner.db')
+        conn, db_type = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('INSERT INTO comments (post_id, author, content) VALUES (?, ?, ?)', (post_id, author, content))
+        p = '%s' if db_type == 'postgres' else '?'
+        cursor.execute(f'INSERT INTO comments (post_id, author, content) VALUES ({p}, {p}, {p})', (post_id, author, content))
         conn.commit()
         conn.close()
     return redirect(url_for('home'))
@@ -183,13 +210,14 @@ def register():
     password = request.form.get('password')
     if username and password:
         try:
-            conn = sqlite3.connect('sabiyoner.db')
+            conn, db_type = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute('INSERT INTO users (username, password) VALUES (?, ?)', (username, password))
+            p = '%s' if db_type == 'postgres' else '?'
+            cursor.execute(f'INSERT INTO users (username, password) VALUES ({p}, {p})', (username, password))
             conn.commit()
             conn.close()
             session['username'] = username
-        except sqlite3.IntegrityError:
+        except Exception:
             pass
     return redirect(url_for('home'))
 
@@ -197,9 +225,10 @@ def register():
 def login():
     username = request.form.get('username')
     password = request.form.get('password')
-    conn = sqlite3.connect('sabiyoner.db')
+    conn, db_type = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM users WHERE username = ? AND password = ?', (username, password))
+    p = '%s' if db_type == 'postgres' else '?'
+    cursor.execute(f'SELECT * FROM users WHERE username = {p} AND password = {p}', (username, password))
     user = cursor.fetchone()
     conn.close()
     if user:
