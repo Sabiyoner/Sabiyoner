@@ -98,7 +98,6 @@ def init_db():
         )
     ''')
     
-    # is_read sütununu mövcud cədvələ də əlavə et
     try:
         cursor.execute("ALTER TABLE messages ADD COLUMN is_read INTEGER DEFAULT 0;")
         conn.commit()
@@ -131,6 +130,14 @@ def home():
     conn, db_type = get_db_connection()
     cursor = conn.cursor()
     p = '%s' if db_type == 'postgres' else '?'
+
+    # Cari istifadəçinin profil şəklini gətir
+    current_user_pic = "https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png"
+    if current_user != 'Qonaq':
+        cursor.execute(f'SELECT profile_pic FROM users WHERE username = {p}', (current_user,))
+        user_row = cursor.fetchone()
+        if user_row and user_row[0]:
+            current_user_pic = user_row[0]
     
     query = 'SELECT id, title, content, category, votes, author, created_at FROM posts WHERE 1=1'
     params = []
@@ -160,6 +167,12 @@ def home():
     for row in posts_data:
         p_id = row[0]
         author = row[5]
+        
+        # Post müəllifinin profil şəklini tap
+        cursor.execute(f'SELECT profile_pic FROM users WHERE username = {p}', (author,))
+        author_pic_row = cursor.fetchone()
+        author_pic = author_pic_row[0] if author_pic_row and author_pic_row[0] else "https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png"
+
         cursor.execute(f'SELECT author, content FROM comments WHERE post_id = {p} ORDER BY id ASC', (p_id,))
         comments_data = cursor.fetchall()
         comments = [{"author": c[0], "content": c[1]} for c in comments_data]
@@ -171,6 +184,7 @@ def home():
             "category": row[3],
             "votes": row[4],
             "author": author,
+            "author_pic": author_pic,
             "created_at": row[6] if len(row) > 6 and row[6] else 'Bəlli deyil',
             "is_following": author in following_list,
             "comments": comments
@@ -178,7 +192,7 @@ def home():
 
     conn.close()
 
-    return render_template('index.html', posts=posts, current_user=current_user, 
+    return render_template('index.html', posts=posts, current_user=current_user, current_user_pic=current_user_pic,
                            current_sort=sort_by, current_cat=category_filter, search_q=search_query)
 
 @app.route('/user/<username>')
@@ -243,7 +257,6 @@ def chat(username):
     if current_user == 'Qonaq':
         return redirect(url_for('home'))
 
-    # Çat səhifəsinə girəndə həmin istifadəçidən gələn mesajları oxunmuş et
     conn, db_type = get_db_connection()
     cursor = conn.cursor()
     p = '%s' if db_type == 'postgres' else '?'
@@ -284,7 +297,6 @@ def api_messages(username):
     conn.close()
     return jsonify(messages)
 
-# Canlı Bildirişlər API-si
 @app.route('/api/notifications')
 def api_notifications():
     current_user = session.get('username', 'Qonaq')
