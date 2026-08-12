@@ -7,12 +7,10 @@ from datetime import datetime
 app = Flask(__name__)
 app.secret_key = 'sabiyoner_gizli_kac_key_123'
 
-# Render DATABASE_URL parametri
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
 def get_db_connection():
     if DATABASE_URL:
-        # PostgreSQL bağlantısı
         url = urlparse(DATABASE_URL)
         conn = psycopg2.connect(
             database=url.path[1:],
@@ -23,7 +21,6 @@ def get_db_connection():
         )
         return conn, 'postgres'
     else:
-        # Lokal sqlite3 bağlantısı (kompüterdə test üçün)
         import sqlite3
         conn = sqlite3.connect('sabiyoner.db')
         return conn, 'sqlite'
@@ -39,7 +36,9 @@ def init_db():
         CREATE TABLE IF NOT EXISTS users (
             id {auto_inc},
             username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL
+            password TEXT NOT NULL,
+            bio TEXT DEFAULT 'No bio yet',
+            profile_pic TEXT DEFAULT 'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png'
         )
     ''')
     
@@ -73,6 +72,15 @@ def init_db():
             FOREIGN KEY(post_id) REFERENCES posts(id) ON DELETE CASCADE
         )
     ''')
+
+    cursor.execute(f'''
+        CREATE TABLE IF NOT EXISTS follows (
+            id {auto_inc},
+            follower TEXT NOT NULL,
+            following TEXT NOT NULL,
+            UNIQUE(follower, following)
+        )
+    ''')
     
     cursor.execute('SELECT COUNT(*) FROM posts')
     count = cursor.fetchone()[0]
@@ -88,7 +96,6 @@ def init_db():
     conn.commit()
     conn.close()
 
-# Bazanı işə salırıq
 init_db()
 
 @app.route('/')
@@ -143,6 +150,104 @@ def home():
 
     return render_template('index.html', posts=posts, current_user=current_user, 
                            current_sort=sort_by, current_cat=category_filter, search_q=search_query)
+
+@app.route('/user/<username>')
+def profile(username):
+    conn, db_type = get_db_connection()
+    cursor = conn.cursor()
+    p = '%s' if db_type == 'postgres' else '?'
+
+    # İstifadəçi məlumatı
+    cursor.execute(f'SELECT username, bio, profile_pic FROM users WHERE username = {p}', (username,))
+    user_info = cursor.fetchone()
+
+    if not user_info:
+        conn.close()
+        return "İstifadəçi tapılmadı!", 404
+
+    profile_user = {
+        "username": user_info[0],
+        "bio": user_info[1] or "No bio yet",
+        "profile_pic": user_info[2] or "https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png"
+    }
+
+    # Statistika
+    cursor.execute(f'SELECT COUNT(*) FROM follows WHERE follower = {p}', (username,))
+    following_count = cursor.fetchone()[0]
+
+    cursor.execute(f'SELECT COUNT(*) FROM follows WHERE following = {p}', (username,))
+    followers_count = cursor.fetchone()[0]
+
+    cursor.execute(f'SELECT COALESCE(SUM(votes), 0) FROM posts WHERE author = {p}', (username,))
+    total_likes = cursor.fetchone()[0]
+
+    # İstifadəçinin postları
+    cursor.execute(f'SELECT id, title, content, category, votes, created_at FROM posts WHERE author = {p} ORDER BY id DESC', (username,))
+    user_posts_data = cursor.fetchall()
+    
+    user_posts = []
+    for row in user_posts_data:
+        user_posts.append({
+            "id": row[0],
+            "title": row[1],
+            "content": row[2],
+            "category": row[3],
+            "votes": row[4],
+            "created_at": row[5]
+        })
+
+    current_user = session.get('username', 'Qonaq')
+    is_following = False
+    if current_user != 'Qonaq':
+        cursor.execute(f'SELECT 1 FROM follows WHERE follower = {p} AND following = {p}', (current_user, username))
+        is_following = cursor.fetchone() is not None
+
+    conn.close()
+
+    return render_template('profile.html', profile_user=profile_user, following_count=following_count, 
+                           followers_count=followers_count, total_likes=total_likes, user_posts=user_posts,
+                           current_user=current_user, is_following=is_following)
+
+@app.route('/follow/<username>')
+def follow_user(username):
+    current_user = session.get('username', 'Qonaq')
+    if current_user != 'Qonaq' and current_user != username:
+        conn, db_type = get_db_connection()
+        cursor = conn.cursor()
+        p = '%s' if db_type == 'postgres' else '?'
+        try:
+            cursor.execute(f'INSERT INTO follows (follower, following) VALUES ({p}, {p})', (current_user, username))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+        conn.close()
+    return redirect(url_for('profile', username=username))
+
+@app.route('/unfollow/<username>')
+def unfollow_user(username):
+    current_user = session.get('username', 'Qonaq')
+    if current_user != 'Qonaq':
+        conn, db_type = get_db_connection()
+        cursor = conn.cursor()
+        p = '%s' if db_type == 'postgres' else '?'
+        cursor.execute(f'DELETE FROM follows WHERE follower = {p} AND following = {p}', (current_user, username))
+        conn.commit()
+        conn.close()
+    return redirect(url_for('profile', username=username))
+
+@app.route('/update_profile', methods=['POST'])
+def update_profile():
+    current_user = session.get('username', 'Qonaq')
+    if current_user != 'Qonaq':
+        bio = request.form.get('bio')
+        profile_pic = request.form.get('profile_pic')
+        conn, db_type = get_db_connection()
+        cursor = conn.cursor()
+        p = '%s' if db_type == 'postgres' else '?'
+        cursor.execute(f'UPDATE users SET bio = {p}, profile_pic = {p} WHERE username = {p}', (bio, profile_pic, current_user))
+        conn.commit()
+        conn.close()
+    return redirect(url_for('profile', username=current_user))
 
 @app.route('/create', methods=['POST'])
 def create_post():
