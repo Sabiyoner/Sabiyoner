@@ -61,12 +61,16 @@
 
         <div class="bio">{{ profile_user.bio }}</div>
 
-        {% if current_user != 'Qonaq' and current_user != profile_user.username %}
-            {% if is_following %}
-                <a href="/unfollow/{{ profile_user.username }}" class="btn-unfollow">Takibdədir</a>
-            {% else %}
-                <a href="/follow/{{ profile_user.username }}" class="btn-follow">İzlə</a>
-            {% endif %}
+        {% if current_user == 'Qonaq' %}
+            <p style="font-size: 13px; color: #888; margin-top: 10px;">🔒 İzləmək üçün <b>Giriş edin</b></p>
+        {% elif current_user != profile_user.username %}
+            <div style="margin-top: 15px;">
+                {% if is_following %}
+                    <a href="/unfollow/{{ profile_user.username }}" class="btn-unfollow">✓ Takibdədir</a>
+                {% else %}
+                    <a href="/follow/{{ profile_user.username }}" class="btn-follow">+ İzlə</a>
+                {% endif %}
+            </div>
         {% endif %}
 
         {% if current_user == profile_user.username %}
