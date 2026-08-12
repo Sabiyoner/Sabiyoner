@@ -229,7 +229,7 @@ def profile(username):
                            total_likes=total_likes, user_posts=user_posts,
                            current_user=current_user, is_following=is_following)
 
-@app.route('/chat/<username>')
+@app.route('/chat/<username>', methods=['GET', 'POST'])
 def chat(username):
     current_user = session.get('username', 'Qonaq')
     if current_user == 'Qonaq':
