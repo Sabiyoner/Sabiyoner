@@ -32,6 +32,7 @@ def init_db():
     placeholder = '%s' if db_type == 'postgres' else '?'
     auto_inc = 'SERIAL PRIMARY KEY' if db_type == 'postgres' else 'INTEGER PRIMARY KEY AUTOINCREMENT'
 
+    # Cədvəl yoxdursa yarat
     cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS users (
             id {auto_inc},
@@ -42,6 +43,19 @@ def init_db():
         )
     ''')
     
+    # Köhnə users cədvəli varsa, yeni sütunları məcburi əlavə et (500 xətasını həll edən hissə)
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN bio TEXT DEFAULT 'No bio yet';")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN profile_pic TEXT DEFAULT 'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png';")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+
     cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS posts (
             id {auto_inc},
@@ -157,7 +171,6 @@ def profile(username):
     cursor = conn.cursor()
     p = '%s' if db_type == 'postgres' else '?'
 
-    # İstifadəçi məlumatı
     cursor.execute(f'SELECT username, bio, profile_pic FROM users WHERE username = {p}', (username,))
     user_info = cursor.fetchone()
 
@@ -167,11 +180,10 @@ def profile(username):
 
     profile_user = {
         "username": user_info[0],
-        "bio": user_info[1] or "No bio yet",
-        "profile_pic": user_info[2] or "https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png"
+        "bio": user_info[1] if user_info[1] else "No bio yet",
+        "profile_pic": user_info[2] if user_info[2] else "https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png"
     }
 
-    # Statistika
     cursor.execute(f'SELECT COUNT(*) FROM follows WHERE follower = {p}', (username,))
     following_count = cursor.fetchone()[0]
 
@@ -181,7 +193,6 @@ def profile(username):
     cursor.execute(f'SELECT COALESCE(SUM(votes), 0) FROM posts WHERE author = {p}', (username,))
     total_likes = cursor.fetchone()[0]
 
-    # İstifadəçinin postları
     cursor.execute(f'SELECT id, title, content, category, votes, created_at FROM posts WHERE author = {p} ORDER BY id DESC', (username,))
     user_posts_data = cursor.fetchall()
     
