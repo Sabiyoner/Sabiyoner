@@ -93,10 +93,18 @@ def init_db():
             sender TEXT NOT NULL,
             receiver TEXT NOT NULL,
             message TEXT NOT NULL,
-            created_at TEXT
+            created_at TEXT,
+            is_read INTEGER DEFAULT 0
         )
     ''')
     
+    # is_read sütununu mövcud cədvələ də əlavə et
+    try:
+        cursor.execute("ALTER TABLE messages ADD COLUMN is_read INTEGER DEFAULT 0;")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+
     cursor.execute('SELECT COUNT(*) FROM posts')
     count = cursor.fetchone()[0]
     if count == 0:
@@ -235,6 +243,14 @@ def chat(username):
     if current_user == 'Qonaq':
         return redirect(url_for('home'))
 
+    # Çat səhifəsinə girəndə həmin istifadəçidən gələn mesajları oxunmuş et
+    conn, db_type = get_db_connection()
+    cursor = conn.cursor()
+    p = '%s' if db_type == 'postgres' else '?'
+    cursor.execute(f'UPDATE messages SET is_read = 1 WHERE sender = {p} AND receiver = {p}', (username, current_user))
+    conn.commit()
+    conn.close()
+
     return render_template('chat.html', recipient=username, current_user=current_user)
 
 @app.route('/api/messages/<username>', methods=['GET', 'POST'])
@@ -252,7 +268,7 @@ def api_messages(username):
         msg = data.get('message') if data else None
         if msg:
             now = datetime.now().strftime("%H:%M")
-            cursor.execute(f'INSERT INTO messages (sender, receiver, message, created_at) VALUES ({p}, {p}, {p}, {p})', 
+            cursor.execute(f'INSERT INTO messages (sender, receiver, message, created_at, is_read) VALUES ({p}, {p}, {p}, {p}, 0)', 
                            (current_user, username, msg, now))
             conn.commit()
 
@@ -267,6 +283,23 @@ def api_messages(username):
 
     conn.close()
     return jsonify(messages)
+
+# Canlı Bildirişlər API-si
+@app.route('/api/notifications')
+def api_notifications():
+    current_user = session.get('username', 'Qonaq')
+    if current_user == 'Qonaq':
+        return jsonify({"unread_count": 0, "senders": []})
+
+    conn, db_type = get_db_connection()
+    cursor = conn.cursor()
+    p = '%s' if db_type == 'postgres' else '?'
+
+    cursor.execute(f'SELECT DISTINCT sender FROM messages WHERE receiver = {p} AND is_read = 0', (current_user,))
+    senders = [r[0] for r in cursor.fetchall()]
+
+    conn.close()
+    return jsonify({"unread_count": len(senders), "senders": senders})
 
 @app.route('/follow/<username>')
 def follow_user(username):
