@@ -87,9 +87,14 @@
                 <form action="/update_profile" method="POST" style="margin-top: 8px;">
                     <label>Bio (Status):</label>
                     <input type="text" name="bio" value="{{ profile_user.bio }}" style="width:100%; padding:6px; margin:4px 0;" required>
-                    <label>Profil Şəkli (URL Link):</label>
-                    <input type="url" name="profile_pic" value="{{ profile_user.profile_pic }}" style="width:100%; padding:6px; margin:4px 0;" required>
-                    <button type="submit" style="background:#0079d3; color:white; border:none; padding:6px 12px; border-radius:12px; margin-top:6px; cursor:pointer;">Yadda Saxla</button>
+                    
+                    <label style="margin-top: 8px; display: block;">Profil Şəkli Yüklə:</label>
+                    <input type="file" id="imageInput" accept="image/*" style="margin: 6px 0;">
+                    
+                    <!-- Gizli input: Yüklənən şəklin Base64 kodunu saxlayır -->
+                    <input type="hidden" name="profile_pic" id="profilePicBase64" value="{{ profile_user.profile_pic }}">
+
+                    <button type="submit" style="background:#0079d3; color:white; border:none; padding:8px 16px; border-radius:12px; margin-top:10px; cursor:pointer; width:100%; font-weight:bold;">Yadda Saxla</button>
                 </form>
             </details>
         {% endif %}
@@ -110,7 +115,7 @@
 <!-- Modal - İzləyir -->
 <div id="followingModal" class="modal">
     <div class="modal-content">
-        <span class="close-btn" onclick="closeModal('followingModal')">×</span>
+        <span class="close-btn" onclick="closeModal('followingModal')">&times;</span>
         <h3>İzlədikləri:</h3>
         {% for u in following_users %}
             <a href="/user/{{ u }}" class="user-link">@{{ u }}</a>
@@ -123,7 +128,7 @@
 <!-- Modal - İzləyicilər -->
 <div id="followersModal" class="modal">
     <div class="modal-content">
-        <span class="close-btn" onclick="closeModal('followersModal')">×</span>
+        <span class="close-btn" onclick="closeModal('followersModal')">&times;</span>
         <h3>İzləyiciləri:</h3>
         {% for u in followers_users %}
             <a href="/user/{{ u }}" class="user-link">@{{ u }}</a>
@@ -137,6 +142,48 @@
     function openModal(id) { document.getElementById(id).style.display = 'block'; }
     function closeModal(id) { document.getElementById(id).style.display = 'none'; }
     if (localStorage.getItem('theme') === 'dark') { document.body.classList.add('dark-mode'); }
+
+    // Qalereyadan şəkil seçildikdə avtomatik ölçüsünü kiçildib saxlayır
+    document.getElementById('imageInput').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    
+                    // Ölçünü 200x200 pikselə qədər sıxırıq ki, baza dolmasın
+                    const maxWidth = 200;
+                    const maxHeight = 200;
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > height) {
+                        if (width > maxWidth) {
+                            height *= maxWidth / width;
+                            width = maxWidth;
+                        }
+                    } else {
+                        if (height > maxHeight) {
+                            width *= maxHeight / height;
+                            height = maxHeight;
+                        }
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    // Sıxılmış şəkli gizli saxlanılan inputa yazırıq
+                    document.getElementById('profilePicBase64').value = canvas.toDataURL('image/jpeg', 0.8);
+                }
+                img.src = event.target.result;
+            }
+            reader.readAsDataURL(file);
+        }
+    });
 </script>
 
 </body>
