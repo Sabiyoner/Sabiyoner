@@ -32,7 +32,6 @@ def init_db():
     placeholder = '%s' if db_type == 'postgres' else '?'
     auto_inc = 'SERIAL PRIMARY KEY' if db_type == 'postgres' else 'INTEGER PRIMARY KEY AUTOINCREMENT'
 
-    # 1. Cədvəlləri sıfırdan təhlükəsiz yarat
     cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS users (
             id {auto_inc},
@@ -41,7 +40,6 @@ def init_db():
         )
     ''')
 
-    # 2. Bio və profile_pic sütunlarını xətasız əlavə et
     for col, default_val in [('bio', "'No bio yet'"), ('profile_pic', "'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png'")]:
         try:
             cursor.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT DEFAULT {default_val};")
@@ -110,6 +108,7 @@ def home():
     sort_by = request.args.get('sort', 'top')
     category_filter = request.args.get('cat', 'Hamısı')
     search_query = request.args.get('q', '').strip()
+    current_user = session.get('username', 'Qonaq')
 
     conn, db_type = get_db_connection()
     cursor = conn.cursor()
@@ -134,9 +133,16 @@ def home():
     cursor.execute(query, params)
     posts_data = cursor.fetchall()
 
+    # İzlənilən istifadəçilərin siyahısı
+    following_list = []
+    if current_user != 'Qonaq':
+        cursor.execute(f'SELECT following FROM follows WHERE follower = {p}', (current_user,))
+        following_list = [row[0] for row in cursor.fetchall()]
+
     posts = []
     for row in posts_data:
         p_id = row[0]
+        author = row[5]
         cursor.execute(f'SELECT author, content FROM comments WHERE post_id = {p} ORDER BY id ASC', (p_id,))
         comments_data = cursor.fetchall()
         comments = [{"author": c[0], "content": c[1]} for c in comments_data]
@@ -147,13 +153,13 @@ def home():
             "content": row[2],
             "category": row[3],
             "votes": row[4],
-            "author": row[5],
+            "author": author,
             "created_at": row[6] if len(row) > 6 and row[6] else 'Bəlli deyil',
+            "is_following": author in following_list,
             "comments": comments
         })
 
     conn.close()
-    current_user = session.get('username', 'Qonaq')
 
     return render_template('index.html', posts=posts, current_user=current_user, 
                            current_sort=sort_by, current_cat=category_filter, search_q=search_query)
@@ -225,7 +231,7 @@ def follow_user(username):
         except Exception:
             conn.rollback()
         conn.close()
-    return redirect(url_for('profile', username=username))
+    return redirect(request.referrer or url_for('home'))
 
 @app.route('/unfollow/<username>')
 def unfollow_user(username):
@@ -237,7 +243,7 @@ def unfollow_user(username):
         cursor.execute(f'DELETE FROM follows WHERE follower = {p} AND following = {p}', (current_user, username))
         conn.commit()
         conn.close()
-    return redirect(url_for('profile', username=username))
+    return redirect(request.referrer or url_for('home'))
 
 @app.route('/update_profile', methods=['POST'])
 def update_profile():
