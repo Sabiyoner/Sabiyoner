@@ -32,29 +32,22 @@ def init_db():
     placeholder = '%s' if db_type == 'postgres' else '?'
     auto_inc = 'SERIAL PRIMARY KEY' if db_type == 'postgres' else 'INTEGER PRIMARY KEY AUTOINCREMENT'
 
-    # Cədvəl yoxdursa yarat
+    # 1. Cədvəlləri sıfırdan təhlükəsiz yarat
     cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS users (
             id {auto_inc},
             username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            bio TEXT DEFAULT 'No bio yet',
-            profile_pic TEXT DEFAULT 'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png'
+            password TEXT NOT NULL
         )
     ''')
-    
-    # Köhnə users cədvəli varsa, yeni sütunları məcburi əlavə et (500 xətasını həll edən hissə)
-    try:
-        cursor.execute("ALTER TABLE users ADD COLUMN bio TEXT DEFAULT 'No bio yet';")
-        conn.commit()
-    except Exception:
-        conn.rollback()
 
-    try:
-        cursor.execute("ALTER TABLE users ADD COLUMN profile_pic TEXT DEFAULT 'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png';")
-        conn.commit()
-    except Exception:
-        conn.rollback()
+    # 2. Bio və profile_pic sütunlarını xətasız əlavə et
+    for col, default_val in [('bio', "'No bio yet'"), ('profile_pic', "'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png'")]:
+        try:
+            cursor.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT DEFAULT {default_val};")
+            conn.commit()
+        except Exception:
+            conn.rollback()
 
     cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS posts (
@@ -180,8 +173,8 @@ def profile(username):
 
     profile_user = {
         "username": user_info[0],
-        "bio": user_info[1] if user_info[1] else "No bio yet",
-        "profile_pic": user_info[2] if user_info[2] else "https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png"
+        "bio": user_info[1] if len(user_info) > 1 and user_info[1] else "No bio yet",
+        "profile_pic": user_info[2] if len(user_info) > 2 and user_info[2] else "https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png"
     }
 
     cursor.execute(f'SELECT COUNT(*) FROM follows WHERE follower = {p}', (username,))
