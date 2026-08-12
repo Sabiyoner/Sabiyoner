@@ -87,6 +87,7 @@ def init_db():
         )
     ''')
 
+    # Messages cədvəli yaranır
     cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS messages (
             id {auto_inc},
@@ -192,11 +193,9 @@ def profile(username):
         "profile_pic": user_info[2] if len(user_info) > 2 and user_info[2] else "https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png"
     }
 
-    # İzlədiyi istifadəçilər
     cursor.execute(f'SELECT following FROM follows WHERE follower = {p}', (username,))
     following_users = [r[0] for r in cursor.fetchall()]
 
-    # Onu izləyənlər
     cursor.execute(f'SELECT follower FROM follows WHERE following = {p}', (username,))
     followers_users = [r[0] for r in cursor.fetchall()]
 
@@ -249,7 +248,7 @@ def chat(username):
                            (current_user, username, msg, now))
             conn.commit()
 
-    # İki istifadəçi arasındakı mesajları gətir
+    # Düzəldilmiş sadə SQL sorğusu
     cursor.execute(f'''
         SELECT sender, receiver, message, created_at FROM messages 
         WHERE (sender = {p} AND receiver = {p}) OR (sender = {p} AND receiver = {p})
