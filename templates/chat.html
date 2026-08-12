@@ -31,19 +31,19 @@
 
     <div class="messages-box" id="msgBox"></div>
 
-    <form class="chat-input" id="chatForm">
-        <input type="text" id="msgInput" placeholder="Mesajınızı yazın..." required autocomplete="off">
-        <button type="submit">Göndər</button>
-    </form>
+    <div class="chat-input">
+        <input type="text" id="msgInput" placeholder="Mesajınızı yazın..." autocomplete="off">
+        <button type="button" id="sendBtn">Göndər</button>
+    </div>
 </div>
 
 <script>
     const recipient = "{{ recipient }}";
     const currentUser = "{{ current_user }}";
     const msgBox = document.getElementById('msgBox');
-    const chatForm = document.getElementById('chatForm');
+    const sendBtn = document.getElementById('sendBtn');
     const msgInput = document.getElementById('msgInput');
-    let lastMsgCount = 0;
+    let lastMsgCount = -1;
 
     async function loadMessages() {
         try {
@@ -70,8 +70,7 @@
         }
     }
 
-    chatForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
+    async function sendMessage() {
         const text = msgInput.value.trim();
         if (!text) return;
         msgInput.value = '';
@@ -83,6 +82,14 @@
         });
         
         loadMessages();
+    }
+
+    sendBtn.addEventListener('click', sendMessage);
+    msgInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            sendMessage();
+        }
     });
 
     loadMessages();
