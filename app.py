@@ -86,6 +86,16 @@ def init_db():
             UNIQUE(follower, following)
         )
     ''')
+
+    cursor.execute(f'''
+        CREATE TABLE IF NOT EXISTS messages (
+            id {auto_inc},
+            sender TEXT NOT NULL,
+            receiver TEXT NOT NULL,
+            message TEXT NOT NULL,
+            created_at TEXT
+        )
+    ''')
     
     cursor.execute('SELECT COUNT(*) FROM posts')
     count = cursor.fetchone()[0]
@@ -133,7 +143,6 @@ def home():
     cursor.execute(query, params)
     posts_data = cursor.fetchall()
 
-    # İzlənilən istifadəçilərin siyahısı
     following_list = []
     if current_user != 'Qonaq':
         cursor.execute(f'SELECT following FROM follows WHERE follower = {p}', (current_user,))
@@ -183,11 +192,13 @@ def profile(username):
         "profile_pic": user_info[2] if len(user_info) > 2 and user_info[2] else "https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png"
     }
 
-    cursor.execute(f'SELECT COUNT(*) FROM follows WHERE follower = {p}', (username,))
-    following_count = cursor.fetchone()[0]
+    # İzlədiyi istifadəçilər
+    cursor.execute(f'SELECT following FROM follows WHERE follower = {p}', (username,))
+    following_users = [r[0] for r in cursor.fetchall()]
 
-    cursor.execute(f'SELECT COUNT(*) FROM follows WHERE following = {p}', (username,))
-    followers_count = cursor.fetchone()[0]
+    # Onu izləyənlər
+    cursor.execute(f'SELECT follower FROM follows WHERE following = {p}', (username,))
+    followers_users = [r[0] for r in cursor.fetchall()]
 
     cursor.execute(f'SELECT COALESCE(SUM(votes), 0) FROM posts WHERE author = {p}', (username,))
     total_likes = cursor.fetchone()[0]
@@ -214,9 +225,43 @@ def profile(username):
 
     conn.close()
 
-    return render_template('profile.html', profile_user=profile_user, following_count=following_count, 
-                           followers_count=followers_count, total_likes=total_likes, user_posts=user_posts,
+    return render_template('profile.html', profile_user=profile_user, 
+                           following_users=following_users, followers_users=followers_users,
+                           following_count=len(following_users), followers_count=len(followers_users), 
+                           total_likes=total_likes, user_posts=user_posts,
                            current_user=current_user, is_following=is_following)
+
+@app.route('/chat/<username>', methods=['GET', 'POST'])
+def chat(username):
+    current_user = session.get('username', 'Qonaq')
+    if current_user == 'Qonaq':
+        return redirect(url_for('home'))
+
+    conn, db_type = get_db_connection()
+    cursor = conn.cursor()
+    p = '%s' if db_type == 'postgres' else '?'
+
+    if request.method == 'POST':
+        msg = request.form.get('message')
+        if msg:
+            now = datetime.now().strftime("%H:%M")
+            cursor.execute(f'INSERT INTO messages (sender, receiver, message, created_at) VALUES ({p}, {p}, {p}, {p})', 
+                           (current_user, username, msg, now))
+            conn.commit()
+
+    # İki istifadəçi arasındakı mesajları gətir
+    cursor.execute(f'''
+        SELECT sender, receiver, message, created_at FROM messages 
+        WHERE (sender = {p} AND receiver = {p}) OR (sender = {p} AND receiver = {p})
+        ORDER BY id ASC
+    ''', (current_user, username, username, current_user))
+    
+    messages_data = cursor.fetchall()
+    messages = [{"sender": m[0], "receiver": m[1], "text": m[2], "time": m[3]} for m in messages_data]
+
+    conn.close()
+
+    return render_template('chat.html', recipient=username, messages=messages, current_user=current_user)
 
 @app.route('/follow/<username>')
 def follow_user(username):
