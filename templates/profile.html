@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="az">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ profile_user.username }} - Profil</title>
+    <style>
+        :root { --bg-color: #DAE0E6; --card-bg: #ffffff; --text-color: #1c1c1c; --border-color: #ccc; }
+        body.dark-mode { --bg-color: #030303; --card-bg: #1a1a1b; --text-color: #d7deda; --border-color: #343536; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 20px; }
+        .container { max-width: 500px; margin: auto; }
+        .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .btn-back { background: var(--card-bg); color: var(--text-color); border: 1px solid var(--border-color); padding: 8px 14px; border-radius: 20px; text-decoration: none; font-weight: bold; }
+        
+        .profile-card { background: var(--card-bg); padding: 24px; border-radius: 12px; border: 1px solid var(--border-color); text-align: center; }
+        .avatar { width: 90px; height: 90px; border-radius: 50%; object-fit: cover; margin-bottom: 8px; border: 2px solid #0079d3; }
+        .username { font-size: 20px; font-weight: bold; margin: 0; }
+        .handle { font-size: 13px; color: #888; margin-bottom: 12px; }
+        
+        .stats-row { display: flex; justify-content: center; gap: 24px; margin: 16px 0; border-top: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); padding: 12px 0; }
+        .stat-item { text-align: center; }
+        .stat-num { font-size: 16px; font-weight: bold; display: block; }
+        .stat-label { font-size: 12px; color: #888; }
+
+        .bio { font-size: 14px; margin-bottom: 16px; color: var(--text-color); }
+        .btn-follow { background-color: #fe2c55; color: white; border: none; padding: 10px 24px; border-radius: 20px; font-weight: bold; cursor: pointer; text-decoration: none; display: inline-block; }
+        .btn-unfollow { background-color: transparent; color: var(--text-color); border: 1px solid var(--border-color); padding: 10px 24px; border-radius: 20px; font-weight: bold; cursor: pointer; text-decoration: none; display: inline-block; }
+
+        .post-card { background: var(--card-bg); padding: 14px 18px; border-radius: 8px; margin-top: 12px; border: 1px solid var(--border-color); text-align: left; }
+        input { width: 100%; padding: 8px; margin: 4px 0; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="top-bar">
+        <a href="/" class="btn-back">⬅ Ana Səhifə</a>
+        <h2>Profil</h2>
+        <div></div>
+    </div>
+
+    <div class="profile-card">
+        <img src="{{ profile_user.profile_pic }}" class="avatar" alt="Avatar">
+        <h1 class="username">{{ profile_user.username }}</h1>
+        <div class="handle">@{{ profile_user.username }}</div>
+
+        <div class="stats-row">
+            <div class="stat-item">
+                <span class="stat-num">{{ following_count }}</span>
+                <span class="stat-label">İzləyir</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-num">{{ followers_count }}</span>
+                <span class="stat-label">İzləyicilər</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-num">{{ total_likes }}</span>
+                <span class="stat-label">Bəyənmələr</span>
+            </div>
+        </div>
+
+        <div class="bio">{{ profile_user.bio }}</div>
+
+        {% if current_user != 'Qonaq' and current_user != profile_user.username %}
+            {% if is_following %}
+                <a href="/unfollow/{{ profile_user.username }}" class="btn-unfollow">Takibdədir</a>
+            {% else %}
+                <a href="/follow/{{ profile_user.username }}" class="btn-follow">İzlə</a>
+            {% endif %}
+        {% endif %}
+
+        {% if current_user == profile_user.username %}
+            <details style="margin-top: 15px; text-align: left; font-size: 13px;">
+                <summary style="cursor: pointer; font-weight: bold; color: #0079d3;">✏️ Profili Düzəlt</summary>
+                <form action="/update_profile" method="POST" style="margin-top: 8px;">
+                    <label>Bio (Status):</label>
+                    <input type="text" name="bio" value="{{ profile_user.bio }}" required>
+                    <label>Profil Şəkli (URL Link):</label>
+                    <input type="url" name="profile_pic" value="{{ profile_user.profile_pic }}" required>
+                    <button type="submit" style="background:#0079d3; color:white; border:none; padding:6px 12px; border-radius:12px; margin-top:6px; cursor:pointer;">Yadda Saxla</button>
+                </form>
+            </details>
+        {% endif %}
+    </div>
+
+    <h3 style="margin-top:20px;">📌 Postları ({{ user_posts|length }}):</h3>
+    {% for post in user_posts %}
+        <div class="post-card">
+            <h4 style="margin:0 0 6px 0;">{{ post.title }}</h4>
+            <p style="margin:0 0 8px 0; font-size: 14px;">{{ post.content }}</p>
+            <div style="font-size:12px; color:#888;">❤️ {{ post.votes }} Like • {{ post.created_at }}</div>
+        </div>
+    {% else %}
+        <p style="color:#888; font-size: 14px;">Hələ ki post paylaşmayıb.</p>
+    {% endfor %}
+</div>
+
+<script>
+    if (localStorage.getItem('theme') === 'dark') {
+        document.body.classList.add('dark-mode');
+    }
+</script>
+
+</body>
+</html>
