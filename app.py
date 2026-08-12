@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 import os
 import psycopg2
 from urllib.parse import urlparse
@@ -87,7 +87,6 @@ def init_db():
         )
     ''')
 
-    # Messages cədvəli yaranır
     cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS messages (
             id {auto_inc},
@@ -230,25 +229,33 @@ def profile(username):
                            total_likes=total_likes, user_posts=user_posts,
                            current_user=current_user, is_following=is_following)
 
-@app.route('/chat/<username>', methods=['GET', 'POST'])
+@app.route('/chat/<username>')
 def chat(username):
     current_user = session.get('username', 'Qonaq')
     if current_user == 'Qonaq':
         return redirect(url_for('home'))
+
+    return render_template('chat.html', recipient=username, current_user=current_user)
+
+@app.route('/api/messages/<username>', methods=['GET', 'POST'])
+def api_messages(username):
+    current_user = session.get('username', 'Qonaq')
+    if current_user == 'Qonaq':
+        return jsonify([])
 
     conn, db_type = get_db_connection()
     cursor = conn.cursor()
     p = '%s' if db_type == 'postgres' else '?'
 
     if request.method == 'POST':
-        msg = request.form.get('message')
+        data = request.get_json()
+        msg = data.get('message') if data else None
         if msg:
             now = datetime.now().strftime("%H:%M")
             cursor.execute(f'INSERT INTO messages (sender, receiver, message, created_at) VALUES ({p}, {p}, {p}, {p})', 
                            (current_user, username, msg, now))
             conn.commit()
 
-    # Düzəldilmiş sadə SQL sorğusu
     cursor.execute(f'''
         SELECT sender, receiver, message, created_at FROM messages 
         WHERE (sender = {p} AND receiver = {p}) OR (sender = {p} AND receiver = {p})
@@ -259,8 +266,7 @@ def chat(username):
     messages = [{"sender": m[0], "receiver": m[1], "text": m[2], "time": m[3]} for m in messages_data]
 
     conn.close()
-
-    return render_template('chat.html', recipient=username, messages=messages, current_user=current_user)
+    return jsonify(messages)
 
 @app.route('/follow/<username>')
 def follow_user(username):
